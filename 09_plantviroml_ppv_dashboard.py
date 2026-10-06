@@ -1,10 +1,11 @@
 # ==============================================================================
 # File: 09_plantviroml_ppv_dashboard.py
 # Description: PlantViroML-PPV Genomic Intelligence Dashboard (Streamlit)
-#              - Supports both built-in example FASTA selection and custom file uploads
+#              - Supports Local Examples, File Upload, and Text Area Paste
 # ==============================================================================
 
 import os
+import io
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -82,46 +83,47 @@ st.sidebar.markdown(
 st.sidebar.markdown("---")
 st.sidebar.subheader("Sequence Input Options")
 
-# Unified selection: Choose between built-in examples or custom upload
-input_choice = st.sidebar.selectbox(
-    "Select Input Method:",
-    [
-        "Built-in: OK562672.1 (Y3 Isolate)", 
-        "Built-in: KF472134.1 (Rec Strain)", 
-        "Built-in: KP998124.1 (PPV-D Strain)", 
-        "Upload Custom FASTA File"
-    ]
+# Input method selection (Examples vs File Upload vs Text Paste)
+input_method = st.sidebar.radio(
+    "Choose Input Method:",
+    ["Use Example FASTA Files", "Upload FASTA File", "Paste FASTA Sequence"]
 )
 
 records = []
-if "Built-in" in input_choice:
+
+if input_method == "Use Example FASTA Files":
     all_examples = get_example_records()
     if len(all_examples) > 0:
-        if "OK562672.1" in input_choice:
-            records = [r for r in all_examples if "OK562672.1" in r.id]
-        elif "KF472134.1" in input_choice:
-            records = [r for r in all_examples if "KF472134.1" in r.id]
-        elif "KP998124.1" in input_choice:
-            records = [r for r in all_examples if "KP998124.1" in r.id]
-        
-        # Fallback if specific ID match fails
-        if not records:
-            records = all_examples
+        example_options = {f"{r.id}: {r.description}": r for r in all_examples}
+        selected_example_name = st.sidebar.selectbox("Select Example Genome:", list(example_options.keys()))
+        records = [example_options[selected_example_name]]
     else:
         st.sidebar.warning("Example FASTA files not found in the root directory[cite: 1, 2, 3].")
-else:
+
+elif input_method == "Upload FASTA File":
     uploaded_file = st.sidebar.file_uploader("Upload PPV Full-Genome FASTA", type=["fasta", "fa", "txt"])
     if uploaded_file is not None:
-        with open("temp_uploaded.fasta", "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        records = list(SeqIO.parse("temp_uploaded.fasta", "fasta"))
+        try:
+            records = list(SeqIO.parse(io.StringIO(uploaded_file.getvalue().decode("utf-8")), "fasta"))
+        except Exception as e:
+            st.sidebar.error(f"Error reading uploaded file: {e}")
+
+else:  # Paste FASTA Sequence
+    pasted_text = st.sidebar.text_area("Paste FASTA Sequence Here:", height=150, placeholder=">Sequence_ID\nATCG...")
+    if pasted_text.strip():
+        try:
+            records = list(SeqIO.parse(io.StringIO(pasted_text), "fasta"))
+            if not records:
+                st.sidebar.error("Invalid FASTA format. Make sure it starts with '>' followed by sequence lines.")
+        except Exception as e:
+            st.sidebar.error(f"Error parsing pasted sequence: {e}")
 
 # Main screen title and description
 st.title("PlantViroML-PPV: AI-Driven Genomic Intelligence Dashboard")
-st.markdown("Analyze Plum Pox Virus genomes using built-in example files or custom FASTA uploads to predict strain, geographic origin, host adaptation, recombination status, and diagnostic performance[cite: 1, 2, 3, 4].")
+st.markdown("Analyze Plum Pox Virus genomes using built-in examples, file uploads, or sequence pasting to predict strain, geographic origin, host adaptation, recombination status, and diagnostic performance[cite: 1, 2, 3, 4].")
 
 if len(records) > 0:
-    # If custom upload has multiple sequences, let user select; if single/built-in, it handles smoothly
+    # If multiple sequences are loaded (e.g., multi-FASTA upload), let user select one
     if len(records) > 1:
         selected_seq_id = st.selectbox("Select Isolate for Analysis:", [rec.id for rec in records])
         selected_record = next(rec for rec in records if rec.id == selected_seq_id)
@@ -218,4 +220,4 @@ if len(records) > 0:
         with diag_col2:
             st.success(f"Pan-PPV CRISPR-Cas12a crRNA Candidate #1 ({cas12_guide}): Compatible")
 else:
-    st.info("Please select a built-in example or upload a custom FASTA file from the sidebar to begin analysis[cite: 1, 2, 3].")
+    st.info("Please select an option from the sidebar (Use Example Files, Upload File, or Paste Sequence) to begin analysis[cite: 1, 2, 3].")
