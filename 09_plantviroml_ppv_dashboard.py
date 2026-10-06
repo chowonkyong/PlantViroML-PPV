@@ -1,7 +1,7 @@
 # ==============================================================================
 # File: 09_plantviroml_ppv_dashboard.py
 # Description: PlantViroML-PPV Genomic Intelligence Dashboard (Streamlit)
-#              - Reads example sequences directly from local FASTA files
+#              - Reads example sequences directly from local FASTA files with path tolerance
 # ==============================================================================
 
 import os
@@ -37,22 +37,33 @@ def load_trained_models():
 
 models = load_trained_models()
 
-# Load example sequences directly from local FASTA files
+# Load example sequences directly from local FASTA files (Path-tolerant version)
 @st.cache_data
 def get_example_records():
-    example_files = [
+    example_filenames = [
         'OK562672.1.fasta', 
         'KF472134.1.fasta', 
         'KP998124.1.fasta'
     ]
     records = []
-    for filename in example_files:
-        if os.path.exists(filename):
-            try:
-                for record in SeqIO.parse(filename, "fasta"):
-                    records.append(record)
-            except Exception as e:
-                print(f"Error reading {filename}: {e}")
+    # Search in current directory and common subdirectories (e.g., data)
+    search_dirs = ['.', 'data', 'fasta', 'genomes']
+    
+    for filename in example_filenames:
+        file_found = False
+        for d in search_dirs:
+            full_path = os.path.join(d, filename)
+            if os.path.exists(full_path):
+                try:
+                    for record in SeqIO.parse(full_path, "fasta"):
+                        records.append(record)
+                    file_found = True
+                    break
+                except Exception as e:
+                    print(f"Error reading {full_path}: {e}")
+        if not file_found:
+            print(f"Warning: {filename} could not be found.")
+            
     return records
 
 # Sidebar configuration
@@ -76,9 +87,9 @@ records = []
 if input_mode == "Use Local Example FASTA Files":
     records = get_example_records()
     if len(records) > 0:
-        st.sidebar.success(f"Successfully loaded {len(records)} local example genomes.")
+        st.sidebar.success(f"Successfully loaded {len(records)} local example genomes[cite: 1, 2, 3].")
     else:
-        st.sidebar.warning("Example FASTA files not found in the current directory. Please ensure OK562672.1.fasta, KF472134.1.fasta, and KP998124.1.fasta are uploaded.")
+        st.sidebar.warning("Example FASTA files not found. Please ensure OK562672.1.fasta, KF472134.1.fasta, and KP998124.1.fasta are in the repository root[cite: 1, 2, 3].")
 else:
     uploaded_file = st.sidebar.file_uploader("Upload PPV Full-Genome FASTA", type=["fasta", "fa", "txt"])
     if uploaded_file is not None:
@@ -137,50 +148,4 @@ if len(records) > 0:
                 'Mutation_Status': DummyModel(['Wild-type', 'Mutant'])
             }
         
-        np.random.seed(hash(selected_record.id) % 2**32)
-        dummy_embedding = np.random.randn(1, 768)
-        
-        res_cols = st.columns(len(models))
-        
-        for idx, (target_name, model) in enumerate(models.items()):
-            pred_label = model.predict(dummy_embedding)[0]
-            pred_proba = model.predict_proba(dummy_embedding)
-            max_proba = np.max(pred_proba) * 100
-            
-            with res_cols[idx]:
-                st.metric(label=f"Predicted {target_name}", value=str(pred_label), delta=f"Confidence: {max_proba:.1f}%")
-
-        st.markdown("---")
-        
-        st.subheader("Detailed Probability Distributions")
-        tab_names = list(models.keys())
-        tabs = st.tabs(tab_names)
-        
-        for tab, target_name in zip(tabs, tab_names):
-            with tab:
-                model = models[target_name]
-                classes = model.classes_
-                probas = model.predict_proba(dummy_embedding)[0]
-                df_prob = pd.DataFrame({'Category': classes, 'Probability': probas})
-                df_prob = df_prob.sort_values(by='Probability', ascending=False).head(8)
-                
-                fig, ax = plt.subplots(figsize=(8, 4))
-                sns.barplot(data=df_prob, x='Probability', y='Category', palette='mako', ax=ax)
-                ax.set_xlim(0, 1)
-                ax.set_title(f"Prediction Confidence for {target_name}")
-                st.pyplot(fig)
-                
-        # Pan-PPV diagnostic assay in silico check
-        st.markdown("---")
-        st.subheader("Pan-PPV Diagnostic Assay In Silico Check (Table S7)")
-        
-        fwd_primer = "GCATACATGCCAAGGTATGG"
-        cas12_guide = "ATTTTTACGAAATGACTTCA"
-        
-        diag_col1, diag_col2 = st.columns(2)
-        with diag_col1:
-            st.success(f"Pan-PPV RT-qPCR Forward Primer ({fwd_primer}): Verified Match (0 Mismatch)")
-        with diag_col2:
-            st.success(f"Pan-PPV CRISPR-Cas12a crRNA Candidate #1 ({cas12_guide}): Compatible")
-else:
-    st.info("Please make sure the example FASTA files (`OK562672.1.fasta`, `KF472134.1.fasta`, `KP998124.1.fasta`) are in the working directory or upload a custom file[cite: 1, 2, 3].")
+        np.random.seed(hash(selected_record.id) % 2**32
