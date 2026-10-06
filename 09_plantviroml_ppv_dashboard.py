@@ -1,6 +1,7 @@
 # ==============================================================================
 # File: 09_plantviroml_ppv_dashboard.py
 # Description: PlantViroML-PPV Genomic Intelligence Dashboard (Streamlit)
+#              - Supports both built-in example FASTA selection and custom file uploads
 # ==============================================================================
 
 import os
@@ -20,13 +21,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Load trained models with caching (Matched with actual .pkl filenames)
+# Load trained models with caching
 @st.cache_resource
 def load_trained_models():
     models = {}
     target_names = ['Strain', 'Country', 'Host', 'Recombinant', 'Mutation_Status']
     for name in target_names:
-        # Match exact naming convention: ppv_{name}_rf_model.pkl
         model_filename = f'ppv_{name}_rf_model.pkl'
         if os.path.exists(model_filename):
             try:
@@ -80,13 +80,33 @@ st.sidebar.markdown(
 )
 
 st.sidebar.markdown("---")
-input_mode = st.sidebar.radio("Select Input Source:", ["Use Local Example FASTA Files", "Upload Custom FASTA"])
+st.sidebar.subheader("Sequence Input Options")
+
+# Unified selection: Choose between built-in examples or custom upload
+input_choice = st.sidebar.selectbox(
+    "Select Input Method:",
+    [
+        "Built-in: OK562672.1 (Y3 Isolate)", 
+        "Built-in: KF472134.1 (Rec Strain)", 
+        "Built-in: KP998124.1 (PPV-D Strain)", 
+        "Upload Custom FASTA File"
+    ]
+)
 
 records = []
-if input_mode == "Use Local Example FASTA Files":
-    records = get_example_records()
-    if len(records) > 0:
-        st.sidebar.success(f"Successfully loaded {len(records)} local example genomes[cite: 1, 2, 3].")
+if "Built-in" in input_choice:
+    all_examples = get_example_records()
+    if len(all_examples) > 0:
+        if "OK562672.1" in input_choice:
+            records = [r for r in all_examples if "OK562672.1" in r.id]
+        elif "KF472134.1" in input_choice:
+            records = [r for r in all_examples if "KF472134.1" in r.id]
+        elif "KP998124.1" in input_choice:
+            records = [r for r in all_examples if "KP998124.1" in r.id]
+        
+        # Fallback if specific ID match fails
+        if not records:
+            records = all_examples
     else:
         st.sidebar.warning("Example FASTA files not found in the root directory[cite: 1, 2, 3].")
 else:
@@ -98,11 +118,16 @@ else:
 
 # Main screen title and description
 st.title("PlantViroML-PPV: AI-Driven Genomic Intelligence Dashboard")
-st.markdown("Analyze Plum Pox Virus genomes using local example files or custom FASTA uploads to predict strain, geographic origin, host adaptation, recombination status, and diagnostic performance[cite: 1, 2, 3, 4].")
+st.markdown("Analyze Plum Pox Virus genomes using built-in example files or custom FASTA uploads to predict strain, geographic origin, host adaptation, recombination status, and diagnostic performance[cite: 1, 2, 3, 4].")
 
 if len(records) > 0:
-    selected_seq_id = st.selectbox("Select Isolate for Analysis:", [rec.id for rec in records])
-    selected_record = next(rec for rec in records if rec.id == selected_seq_id)
+    # If custom upload has multiple sequences, let user select; if single/built-in, it handles smoothly
+    if len(records) > 1:
+        selected_seq_id = st.selectbox("Select Isolate for Analysis:", [rec.id for rec in records])
+        selected_record = next(rec for rec in records if rec.id == selected_seq_id)
+    else:
+        selected_record = records[0]
+        st.info(f"Loaded Isolate: **{selected_record.id}** ({selected_record.description})")
     
     col1, col2 = st.columns([1, 2])
     
@@ -193,4 +218,4 @@ if len(records) > 0:
         with diag_col2:
             st.success(f"Pan-PPV CRISPR-Cas12a crRNA Candidate #1 ({cas12_guide}): Compatible")
 else:
-    st.info("Please make sure the example FASTA files (`OK562672.1.fasta`, `KF472134.1.fasta`, `KP998124.1.fasta`) are in the repository directory or upload a custom file[cite: 1, 2, 3].")
+    st.info("Please select a built-in example or upload a custom FASTA file from the sidebar to begin analysis[cite: 1, 2, 3].")
