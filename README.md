@@ -20,8 +20,23 @@ The analysis and deployment pipeline comprises the following Python scripts:
 | `10_run_dnabert_shap.py` | Executes detailed DNABERT-2 embedding-based SHAP feature importance analysis. |
 | `PlantViroML-PPV.py` | Core dashboard runner script for real-time genomic prediction. |
 
+## 🧬 Built-in Example Genomic Datasets
+
+The repository includes three built-in full-genome FASTA example files for testing and benchmarking the dashboard:
+
+| File Name | Description & GenBank Accession | Strain / Isolate Type |
+| :--- | :--- | :--- |
+| `OK562672.1.fasta` | Plum pox virus isolate Y3, complete genome[cite: 1] | PPV-Y |
+| `KF472134.1.fasta` | Plum pox virus strain Rec, complete genome[cite: 2] | PPV-Rec |
+| `KP998124.1.fasta` | Plum pox virus strain PPV-D, complete genome[cite: 3] | PPV-D |
+
 ## 🚀 Web Dashboard Deployment (`09_plantviroml_ppv_dashboard.py`)
-The repository includes an interactive Streamlit dashboard allowing users to upload full-genome FASTA sequences and instantly predict:
+The repository includes an interactive Streamlit dashboard allowing users to analyze Plum Pox Virus genomes using three flexible input options:
+1. **Use Example FASTA Files**: Quickly load and benchmark the built-in reference genomes (`OK562672.1`, `KF472134.1`, `KP998124.1`)[cite: 1, 2, 3].
+2. **Upload FASTA File**: Upload a custom full-genome FASTA file (`.fasta`, `.fa`, `.txt`).
+3. **Paste FASTA Sequence**: Directly paste FASTA format text into the input text box.
+
+The dashboard instantly predicts:
 * 🦠 **Strain Classification** (`ppv_Strain_rf_model.pkl`)
 * 🌍 **Country Origin Classifier** (`ppv_Country_rf_model.pkl`)
 * 🌳 **Host Adaptation** (`ppv_Host_rf_model.pkl`)
@@ -31,7 +46,3 @@ The repository includes an interactive Streamlit dashboard allowing users to upl
 ### Local Execution:
 ```bash
 streamlit run 09_plantviroml_ppv_dashboard.py
-```
-
-## 🛠️ Usage
-All scripts are designed to run within Python environments configured for the PlantViroML genomic pipeline (`requirements.txt`).
