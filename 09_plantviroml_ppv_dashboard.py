@@ -98,13 +98,28 @@ if input_method == "Use Example FASTA Files":
         selected_example_name = st.sidebar.selectbox("Select Example Genome:", list(example_options.keys()))
         records = [example_options[selected_example_name]]
     else:
-        st.sidebar.warning("Example FASTA files not found in the root directory[cite: 1, 2, 3].")
+        st.sidebar.warning("Example FASTA files not found in the root directory.")
 
 elif input_method == "Upload FASTA File":
     uploaded_file = st.sidebar.file_uploader("Upload PPV Full-Genome FASTA", type=["fasta", "fa", "txt"])
     if uploaded_file is not None:
         try:
-            records = list(SeqIO.parse(io.StringIO(uploaded_file.getvalue().decode("utf-8")), "fasta"))
+            # 파일 읽기 안정성 강화 (utf-8 또는 cp949/latin-1 등 fallback 처리)
+            bytes_data = uploaded_file.getvalue()
+            string_data = None
+            for encoding in ['utf-8', 'cp949', 'latin-1']:
+                try:
+                    string_data = bytes_data.decode(encoding)
+                    break
+                except UnicodeDecodeError:
+                    continue
+            
+            if string_data:
+                records = list(SeqIO.parse(io.StringIO(string_data), "fasta"))
+                if not records:
+                    st.sidebar.error("No valid FASTA records found in the uploaded file.")
+            else:
+                st.sidebar.error("Failed to decode the uploaded file encoding.")
         except Exception as e:
             st.sidebar.error(f"Error reading uploaded file: {e}")
 
@@ -120,7 +135,7 @@ else:  # Paste FASTA Sequence
 
 # Main screen title and description
 st.title("PlantViroML-PPV: AI-Driven Genomic Intelligence Dashboard")
-st.markdown("Analyze Plum Pox Virus genomes using built-in examples, file uploads, or sequence pasting to predict strain, geographic origin, host adaptation, recombination status, and diagnostic performance[cite: 1, 2, 3, 4].")
+st.markdown("Analyze Plum Pox Virus genomes using built-in examples, file uploads, or sequence pasting to predict strain, geographic origin, host adaptation, recombination status, and diagnostic performance.")
 
 if len(records) > 0:
     # If multiple sequences are loaded (e.g., multi-FASTA upload), let user select one
@@ -140,7 +155,10 @@ if len(records) > 0:
         st.text(f"Length: {len(selected_record.seq)} bp")
         
         seq_str = str(selected_record.seq).upper()
-        gc_content = (seq_str.count('G') + seq_str.count('C')) / len(seq_str) * 100
+        if len(seq_str) > 0:
+            gc_content = (seq_str.count('G') + seq_str.count('C')) / len(seq_str) * 100
+        else:
+            gc_content = 0.0
         st.text(f"GC Content: {gc_content:.2f}%")
         
         if st.button("Run PlantViroML-PPV Prediction", type="primary"):
@@ -206,6 +224,7 @@ if len(records) > 0:
                 ax.set_xlim(0, 1)
                 ax.set_title(f"Prediction Confidence for {target_name}")
                 st.pyplot(fig)
+                plt.close(fig)  # 메모리 누수 방지
                 
         # Pan-PPV diagnostic assay in silico check
         st.markdown("---")
@@ -220,4 +239,4 @@ if len(records) > 0:
         with diag_col2:
             st.success(f"Pan-PPV CRISPR-Cas12a crRNA Candidate #1 ({cas12_guide}): Compatible")
 else:
-    st.info("Please select an option from the sidebar (Use Example Files, Upload File, or Paste Sequence) to begin analysis[cite: 1, 2, 3].")
+    st.info("Please select an option from the sidebar (Use Example Files, Upload File, or Paste Sequence) to begin analysis.")
