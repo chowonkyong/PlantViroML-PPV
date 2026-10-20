@@ -1,7 +1,8 @@
 # ==============================================================================
 # File: 09_plantviroml_ppv_dashboard.py
 # Description: PlantViroML-PPV Genomic Intelligence Dashboard (Streamlit)
-#              - Supports Local Examples, File Upload, and Text Area Paste
+#              - Supports Local Examples, File Upload, Text Area Paste
+#              - Integrates actual DNABERT-2 extraction for robust AI inference
 # ==============================================================================
 
 import os
@@ -13,6 +14,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import joblib
 from Bio import SeqIO
+import torch
+from transformers import AutoTokenizer, AutoModel
 
 # Streamlit page configuration
 st.set_page_config(
@@ -22,7 +25,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Load trained models with caching
+# Load trained Random Forest models
 @st.cache_resource
 def load_trained_models():
     models = {}
@@ -36,14 +39,50 @@ def load_trained_models():
                 print(f"Error loading {model_filename}: {e}")
     return models
 
+# Load DNABERT-2 Model (Cached to avoid reloading)
+@st.cache_resource
+def load_dnabert_model():
+    model_name = "zhihan1996/DNABERT-2-117M"
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+    model = AutoModel.from_pretrained(model_name, trust_remote_code=True)
+    model.eval()
+    
+    # GPU 가속 지원 (CUDA 사용 가능 시)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+    
+    return tokenizer, model, device
+
+# Extract Embedding using Sliding Window approach for long genomes
+def get_dnabert_embedding(seq_str, tokenizer, model, device, chunk_size=512):
+    embeddings = []
+    # 시퀀스를 chunk_size 단위로 분할
+    for i in range(0, len(seq_str), chunk_size):
+        chunk = seq_str[i:i+chunk_size]
+        inputs = tokenizer(chunk, return_tensors='pt', padding=True, truncation=True, max_length=512).to(device)
+        
+        with torch.no_grad():
+            hidden_states = model(**inputs)[0] # [1, seq_len, 768]
+            # Chunk의 평균 임베딩 도출
+            chunk_emb = torch.mean(hidden_states, dim=1) # [1, 768]
+            embeddings.append(chunk_emb.cpu())
+            
+    if embeddings:
+        # 모든 Chunk의 임베딩을 평균내어 최종 1개의 768차원 벡터 생성
+        final_embedding = torch.mean(torch.cat(embeddings, dim=0), dim=0, keepdim=True).numpy()
+    else:
+        final_embedding = np.zeros((1, 768))
+        
+    return final_embedding
+
 models = load_trained_models()
 
-# Load example sequences directly from local FASTA files or embedded string
+# Load example sequences directly from embedded string or local FASTA files
 @st.cache_data
 def get_example_records():
     records = []
     
-    # 1. Embedded MK387313.1 Sequence
+    # 1. Embedded MK387313.1 Sequence (기본 내장 예제)
     mk387313_fasta = """>MK387313.1 Plum pox virus isolate W3174-02, complete genome
 AAAATATAAAAACTCAACACAACCTACAAAATTTTATGCGATCAAACCAACTTCAAACTTTCAAAATCTT
 AACAATCTTGCAGTGCTATTTGCGAAATACTTCTACATTTTACTTCATTCAGTTTTCCAGCAAACAACAG
@@ -192,10 +231,7 @@ TTGTATCYGATGAAGCGAGTGTTTCACTCCATTCGGGTTATAGTTCTTGTGCAAGAGAC"""
         print(f"Error parsing embedded FASTA: {e}")
 
     # 2. Load other examples from files if they exist
-    example_filenames = [
-        'KF472134.1.fasta', 
-        'KP998124.1.fasta'
-    ]
+    example_filenames = ['KF472134.1.fasta', 'KP998124.1.fasta']
     search_dirs = ['.', 'data', 'fasta', 'genomes']
     
     for filename in example_filenames:
@@ -320,6 +356,12 @@ if len(records) > 0:
         st.markdown("---")
         st.header("PlantViroML-PPV Real-Time Prediction Results")
         
+        # 실제 DNABERT-2 임베딩 추출 진행
+        with st.spinner("Initializing DNABERT-2 Model and Extracting Semantic Embeddings (This may take a moment)..."):
+            tokenizer, dnabert_model, device = load_dnabert_model()
+            real_embedding = get_dnabert_embedding(seq_str, tokenizer, dnabert_model, device)
+            st.success("Embedding Extraction Complete!")
+        
         if not models:
             st.warning("Trained model files (.pkl) not found. Displaying simulation results based on sample metadata.")
             class DummyModel:
@@ -339,14 +381,12 @@ if len(records) > 0:
                 'Mutation_Status': DummyModel(['Wild-type', 'Mutant'])
             }
         
-        np.random.seed(hash(selected_record.id) % 2**32)
-        dummy_embedding = np.random.randn(1, 768)
-        
         res_cols = st.columns(len(models))
         
+        # 모델 예측 수행 (실제 768차원 임베딩 사용)
         for idx, (target_name, model) in enumerate(models.items()):
-            pred_label = model.predict(dummy_embedding)[0]
-            pred_proba = model.predict_proba(dummy_embedding)
+            pred_label = model.predict(real_embedding)[0]
+            pred_proba = model.predict_proba(real_embedding)
             max_proba = np.max(pred_proba) * 100
             
             with res_cols[idx]:
@@ -362,7 +402,7 @@ if len(records) > 0:
             with tab:
                 model = models[target_name]
                 classes = model.classes_
-                probas = model.predict_proba(dummy_embedding)[0]
+                probas = model.predict_proba(real_embedding)[0]
                 df_prob = pd.DataFrame({'Category': classes, 'Probability': probas})
                 df_prob = df_prob.sort_values(by='Probability', ascending=False).head(8)
                 
