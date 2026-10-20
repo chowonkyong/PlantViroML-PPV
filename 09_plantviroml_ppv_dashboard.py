@@ -3,6 +3,7 @@
 # Description: PlantViroML-PPV Genomic Intelligence Dashboard (Streamlit)
 #              - Supports Local Examples, File Upload, Text Area Paste
 #              - Integrates actual DNABERT-2 extraction for robust AI inference
+#              - Fixed AutoConfig pad_token_id issue
 # ==============================================================================
 
 import os
@@ -15,7 +16,7 @@ import seaborn as sns
 import joblib
 from Bio import SeqIO
 import torch
-from transformers import AutoTokenizer, AutoModel
+from transformers import AutoTokenizer, AutoModel, AutoConfig
 
 # Streamlit page configuration
 st.set_page_config(
@@ -43,11 +44,20 @@ def load_trained_models():
 @st.cache_resource
 def load_dnabert_model():
     model_name = "zhihan1996/DNABERT-2-117M"
+    
+    # 1. Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-    model = AutoModel.from_pretrained(model_name, trust_remote_code=True)
+    
+    # 2. Load config and inject missing pad_token_id to prevent AttributeError
+    config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
+    if getattr(config, "pad_token_id", None) is None:
+        config.pad_token_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0
+        
+    # 3. Load model with modified config
+    model = AutoModel.from_pretrained(model_name, config=config, trust_remote_code=True)
     model.eval()
     
-    # GPU 가속 지원 (CUDA 사용 가능 시)
+    # GPU Support
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
     
@@ -56,19 +66,16 @@ def load_dnabert_model():
 # Extract Embedding using Sliding Window approach for long genomes
 def get_dnabert_embedding(seq_str, tokenizer, model, device, chunk_size=512):
     embeddings = []
-    # 시퀀스를 chunk_size 단위로 분할
     for i in range(0, len(seq_str), chunk_size):
         chunk = seq_str[i:i+chunk_size]
         inputs = tokenizer(chunk, return_tensors='pt', padding=True, truncation=True, max_length=512).to(device)
         
         with torch.no_grad():
             hidden_states = model(**inputs)[0] # [1, seq_len, 768]
-            # Chunk의 평균 임베딩 도출
             chunk_emb = torch.mean(hidden_states, dim=1) # [1, 768]
             embeddings.append(chunk_emb.cpu())
             
     if embeddings:
-        # 모든 Chunk의 임베딩을 평균내어 최종 1개의 768차원 벡터 생성
         final_embedding = torch.mean(torch.cat(embeddings, dim=0), dim=0, keepdim=True).numpy()
     else:
         final_embedding = np.zeros((1, 768))
@@ -82,7 +89,7 @@ models = load_trained_models()
 def get_example_records():
     records = []
     
-    # 1. Embedded MK387313.1 Sequence (기본 내장 예제)
+    # 1. Embedded MK387313.1 Sequence
     mk387313_fasta = """>MK387313.1 Plum pox virus isolate W3174-02, complete genome
 AAAATATAAAAACTCAACACAACCTACAAAATTTTATGCGATCAAACCAACTTCAAACTTTCAAAATCTT
 AACAATCTTGCAGTGCTATTTGCGAAATACTTCTACATTTTACTTCATTCAGTTTTCCAGCAAACAACAG
