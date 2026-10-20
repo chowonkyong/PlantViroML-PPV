@@ -3,7 +3,7 @@
 # Description: PlantViroML-PPV Genomic Intelligence Dashboard (Streamlit)
 #              - Supports Local Examples, File Upload, Text Area Paste
 #              - Integrates actual DNABERT-2 extraction for robust AI inference
-#              - Fixed AutoConfig pad_token_id issue
+#              - Fixed AutoConfig pad_token_id issue & Meta Tensor device bug
 # ==============================================================================
 
 import os
@@ -48,13 +48,18 @@ def load_dnabert_model():
     # 1. Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
     
-    # 2. Load config and inject missing pad_token_id to prevent AttributeError
+    # 2. Load config and inject missing pad_token_id
     config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
     if getattr(config, "pad_token_id", None) is None:
         config.pad_token_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0
         
-    # 3. Load model with modified config
-    model = AutoModel.from_pretrained(model_name, config=config, trust_remote_code=True)
+    # 3. Load model with modified config AND disable meta-tensor loading to prevent device mismatch error
+    model = AutoModel.from_pretrained(
+        model_name, 
+        config=config, 
+        trust_remote_code=True,
+        low_cpu_mem_usage=False  # 핵심 수정 사항: Meta 가상 텐서 로딩 비활성화
+    )
     model.eval()
     
     # GPU Support
